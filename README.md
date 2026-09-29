@@ -11,6 +11,35 @@ A dependency-free control plane for treating prompts like production artifacts: 
 - Minimum-sample and confidence-aware winner decisions.
 - A CLI demo and automated tests without external services.
 
+## Run it
+
+```powershell
+python -m unittest -v
+python demo.py
+```
+
+The demo creates two prompt versions in a temporary registry, promotes version 1 through production, assigns 300 stable identities to a 50/50 experiment, records simulated outcomes, selects a confidence-qualified winner, and promotes version 2.
+
+## Code map
+
+- `prompt_registry.py`: immutable versions, checksums, exact rendering, approval, promotion, deployed rendering, and rollback.
+- `experiments.py`: lifecycle validation and deterministic weighted traffic assignment.
+- `metrics.py`: independent outcomes, per-variant metrics, Wilson intervals, difference intervals, cost guardrails, and winner decisions.
+- `demo.py`: end-to-end release and experiment story.
+- `tests.py`: integrity, workflow, allocation, statistics, and guardrail tests.
+
+## Core logic
+
+Prompt variables are parsed before storage; rendering rejects both missing and unexpected values. Every version has a SHA-256 checksum over its identity, content, and variables. Production promotion requires the same version in staging plus approval from someone other than its author.
+
+Experiment assignment hashes `experiment id + salt + identity` into a number in `[0,1)`, then walks cumulative allocation weights. The same identity therefore receives the same variant without storing session state. Changing the salt intentionally reshuffles traffic.
+
+For binary conversion, the dashboard reports a Wilson 95% interval, which behaves better than the simple normal interval at small samples or extreme rates. A winner must have enough independent units, a treatment-control confidence interval whose lower bound clears the minimum effect, and acceptable average cost.
+
+## Production boundaries
+
+The JSON files make the domain rules visible, but a real service needs transactional storage, authorization, audit retention, concurrent-write protection, experiment exposure logging, bot/internal-traffic filtering, sample-ratio-mismatch alerts, sequential-testing controls, and integration with the gateway and regression suite.
+
 ## Core idea
 
 This project manages prompts like product code. It stores prompt versions, tracks who changed what, runs A/B tests, measures quality and business metrics, and supports rollback. Teams can test prompt changes on a small percentage of traffic before full release.
