@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+data/
+reports/
+.venv/
+venv/
+.env
+LOCAL_NOTES.md
+*.pdf
+study/
