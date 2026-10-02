@@ -7,8 +7,10 @@ A dependency-free control plane for treating prompts like production artifacts: 
 - Immutable, checksummed prompt versions with explicit variables.
 - Safe development → staging → production promotion and rollback.
 - Deterministic experiment bucketing with configurable traffic allocation.
+- First-exposure logging and outcome-to-exposure integrity checks.
+- Chi-square sample-ratio-mismatch detection before winner selection.
 - Quality, conversion, cost, and latency measurement per variant.
-- Minimum-sample and confidence-aware winner decisions.
+- Pre-registered metrics, thresholds, and confidence-aware winner decisions.
 - A CLI demo and automated tests without external services.
 
 ## Run it
@@ -18,12 +20,13 @@ python -m unittest -v
 python demo.py
 ```
 
-The demo creates two prompt versions in a temporary registry, promotes version 1 through production, assigns 300 stable identities to a 50/50 experiment, records simulated outcomes, selects a confidence-qualified winner, and promotes version 2.
+The demo creates two prompt versions in a temporary registry, promotes version 1 through production, assigns and records the first exposure of 300 stable identities, validates the observed 50/50 traffic split, accepts only exposure-matched outcomes, selects a confidence-qualified winner using a pre-registered analysis plan, and promotes version 2.
 
 ## Code map
 
 - `prompt_registry.py`: immutable versions, checksums, exact rendering, approval, promotion, deployed rendering, and rollback.
 - `experiments.py`: lifecycle validation and deterministic weighted traffic assignment.
+- `exposures.py`: append-only first-exposure records and assignment-integrity checks.
 - `metrics.py`: independent outcomes, per-variant metrics, Wilson intervals, difference intervals, cost guardrails, and winner decisions.
 - `demo.py`: end-to-end release and experiment story.
 - `tests.py`: integrity, workflow, allocation, statistics, and guardrail tests.
@@ -34,11 +37,13 @@ Prompt variables are parsed before storage; rendering rejects both missing and u
 
 Experiment assignment hashes `experiment id + salt + identity` into a number in `[0,1)`, then walks cumulative allocation weights. The same identity therefore receives the same variant without storing session state. Changing the salt intentionally reshuffles traffic.
 
-For binary conversion, the dashboard reports a Wilson 95% interval, which behaves better than the simple normal interval at small samples or extreme rates. A winner must have enough independent units, a treatment-control confidence interval whose lower bound clears the minimum effect, and acceptable average cost.
+Assignment alone does not prove that a user saw a prompt. The platform records a first exposure only when the assigned prompt is actually used, then rejects outcomes without a matching experiment, identity, and variant. Analysis checks the observed exposure counts against the configured allocation with a chi-square goodness-of-fit test. A statistically unlikely split is marked as a sample ratio mismatch and blocks winner selection because it can indicate routing, instrumentation, or eligibility bugs.
+
+For binary conversion, the dashboard reports a Wilson 95% interval, which behaves better than the simple normal interval at small samples or extreme rates. The experiment stores its control, primary metric, minimum samples, minimum effect, cost limit, and sample-ratio threshold before it runs. A winner must follow that plan, have enough independent units, clear the treatment-control confidence bound, and remain within the cost guardrail.
 
 ## Production boundaries
 
-The JSON files make the domain rules visible, but a real service needs transactional storage, authorization, audit retention, concurrent-write protection, experiment exposure logging, bot/internal-traffic filtering, sample-ratio-mismatch alerts, sequential-testing controls, and integration with the gateway and regression suite.
+The JSON files make the domain rules visible, but a real service needs transactional storage, authorization, audit retention, cross-process write protection, bot/internal-traffic filtering, multiple-comparison and sequential-testing controls, and integration with the gateway and regression suite.
 
 ## Core idea
 
