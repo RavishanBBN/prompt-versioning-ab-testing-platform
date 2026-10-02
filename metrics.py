@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from exposures import JsonlExposureStore
+from experiments import Experiment
 
 
 def utc_now() -> str:
@@ -202,6 +203,20 @@ class ExperimentAnalyzer:
         return WinnerDecision(
             "winner", name, primary_metric, round(effect, 6), interval,
             f"{name} beat {control} with a positive 95% lower bound and acceptable cost",
+        )
+
+    def choose_for_experiment(self, experiment: Experiment) -> WinnerDecision:
+        """Evaluate results using the analysis plan fixed before the run."""
+        experiment.validate()
+        return self.choose_winner(
+            experiment.id,
+            control=experiment.control,
+            primary_metric=experiment.primary_metric,
+            minimum_samples=experiment.minimum_samples,
+            minimum_effect=experiment.minimum_effect,
+            max_cost_increase=experiment.max_cost_increase,
+            expected_allocation=experiment.allocation,
+            sample_ratio_alpha=experiment.sample_ratio_alpha,
         )
 
 

@@ -23,6 +23,12 @@ class Experiment:
     salt: str
     status: str = "draft"
     created_at: str = ""
+    control: str = "control"
+    primary_metric: str = "quality"
+    minimum_samples: int = 30
+    minimum_effect: float = 0.0
+    max_cost_increase: float = 0.10
+    sample_ratio_alpha: float = 0.01
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "Experiment":
@@ -34,6 +40,12 @@ class Experiment:
             salt=str(value["salt"]),
             status=str(value.get("status", "draft")),
             created_at=str(value.get("created_at", "")),
+            control=str(value.get("control", "control")),
+            primary_metric=str(value.get("primary_metric", "quality")),
+            minimum_samples=int(value.get("minimum_samples", 30)),
+            minimum_effect=float(value.get("minimum_effect", 0.0)),
+            max_cost_increase=float(value.get("max_cost_increase", 0.10)),
+            sample_ratio_alpha=float(value.get("sample_ratio_alpha", 0.01)),
         )
 
     def validate(self) -> None:
@@ -51,6 +63,18 @@ class Experiment:
             raise ValueError("allocation weights must sum to 1")
         if self.status not in {"draft", "running", "paused", "completed"}:
             raise ValueError("invalid experiment status")
+        if self.control not in self.variants:
+            raise ValueError("control must name an experiment variant")
+        if self.primary_metric not in {"quality", "conversion"}:
+            raise ValueError("primary_metric must be quality or conversion")
+        if self.minimum_samples < 2:
+            raise ValueError("minimum_samples must be at least 2")
+        if self.minimum_effect < 0:
+            raise ValueError("minimum_effect cannot be negative")
+        if self.max_cost_increase < 0:
+            raise ValueError("max_cost_increase cannot be negative")
+        if not 0 < self.sample_ratio_alpha < 1:
+            raise ValueError("sample_ratio_alpha must be between 0 and 1")
 
 
 @dataclass(frozen=True)

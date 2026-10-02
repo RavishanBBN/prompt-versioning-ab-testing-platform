@@ -90,6 +90,18 @@ class ExperimentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "running"):
             self.catalog.assign("exp-1", "user-1")
 
+    def test_analysis_plan_is_validated_and_persisted(self):
+        stored = self.catalog.get("exp-1")
+        self.assertEqual(stored.control, "control")
+        self.assertEqual(stored.primary_metric, "quality")
+        self.assertEqual(stored.minimum_samples, 30)
+        invalid = Experiment(
+            "bad-plan", "reply", {"a": 1, "b": 2},
+            {"a": 0.5, "b": 0.5}, "salt", control="missing",
+        )
+        with self.assertRaisesRegex(ValueError, "control"):
+            self.catalog.create(invalid)
+
     def test_assignment_is_sticky(self):
         self.catalog.set_status("exp-1", "running")
         first = self.catalog.assign("exp-1", "user-1")
@@ -223,6 +235,22 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(decision.status, "invalid_experiment")
         self.assertIsNone(decision.winner)
         self.assertIn("sample ratio mismatch", decision.reason)
+
+    def test_registered_analysis_plan_selects_winner(self):
+        self.add_group("control", 0.7, 0.01, count=50)
+        self.add_group("candidate", 0.9, 0.0105, count=50)
+        experiment = Experiment(
+            "exp",
+            "reply",
+            {"control": 1, "candidate": 2},
+            {"control": 0.5, "candidate": 0.5},
+            "salt",
+            minimum_samples=40,
+            minimum_effect=0.05,
+        )
+        decision = self.analyzer.choose_for_experiment(experiment)
+        self.assertEqual(decision.status, "winner")
+        self.assertEqual(decision.winner, "candidate")
 
 
 if __name__ == "__main__":
