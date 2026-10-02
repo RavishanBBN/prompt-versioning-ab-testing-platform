@@ -128,6 +128,25 @@ class ExperimentAnalyzer:
             )
         return summaries
 
+    def allocation_health(
+        self,
+        experiment_id: str,
+        allocation: dict[str, float],
+        alpha: float = 0.01,
+        minimum_total: int = 100,
+    ) -> AllocationHealth:
+        if self.store.exposure_store is not None:
+            records = self.store.exposure_store.records(experiment_id)
+        else:
+            records = self.store.records(experiment_id)
+        observed = {name: 0 for name in allocation}
+        for record in records:
+            variant = str(record["variant"])
+            if variant not in observed:
+                raise ValueError(f"unknown observed variant: {variant}")
+            observed[variant] += 1
+        return check_sample_ratio(observed, allocation, alpha, minimum_total)
+
     def choose_winner(
         self,
         experiment_id: str,
@@ -136,6 +155,8 @@ class ExperimentAnalyzer:
         minimum_samples: int = 30,
         minimum_effect: float = 0.0,
         max_cost_increase: float = 0.10,
+        expected_allocation: dict[str, float] | None = None,
+        sample_ratio_alpha: float = 0.01,
     ) -> WinnerDecision:
         if primary_metric not in {"quality", "conversion"}:
             raise ValueError("primary_metric must be quality or conversion")
@@ -149,6 +170,18 @@ class ExperimentAnalyzer:
                 "insufficient_data", None, primary_metric, None, None,
                 f"every variant needs at least {minimum_samples} independent samples",
             )
+        if expected_allocation is not None:
+            health = self.allocation_health(
+                experiment_id,
+                expected_allocation,
+                alpha=sample_ratio_alpha,
+                minimum_total=minimum_samples * len(expected_allocation),
+            )
+            if health.status == "mismatch":
+                return WinnerDecision(
+                    "invalid_experiment", None, primary_metric, None, None,
+                    f"sample ratio mismatch detected (p={health.p_value})",
+                )
 
         baseline = summaries[control]
         candidates: list[tuple[float, str, float, tuple[float, float]]] = []

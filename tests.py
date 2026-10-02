@@ -211,6 +211,19 @@ class MetricsTests(unittest.TestCase):
         decision = self.analyzer.choose_winner("exp", "control", minimum_samples=30)
         self.assertEqual(decision.status, "no_winner")
 
+    def test_sample_ratio_mismatch_blocks_winner_selection(self):
+        self.add_group("control", 0.7, 0.01, count=80)
+        self.add_group("candidate", 0.9, 0.01, count=20)
+        decision = self.analyzer.choose_winner(
+            "exp",
+            "control",
+            minimum_samples=20,
+            expected_allocation={"control": 0.5, "candidate": 0.5},
+        )
+        self.assertEqual(decision.status, "invalid_experiment")
+        self.assertIsNone(decision.winner)
+        self.assertIn("sample ratio mismatch", decision.reason)
+
 
 if __name__ == "__main__":
     unittest.main()
