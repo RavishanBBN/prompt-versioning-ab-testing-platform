@@ -58,6 +58,17 @@ class WinnerDecision:
     reason: str
 
 
+@dataclass(frozen=True)
+class AllocationHealth:
+    status: str
+    observed: dict[str, int]
+    expected: dict[str, float]
+    chi_square: float | None
+    degrees_freedom: int
+    p_value: float | None
+    alpha: float
+
+
 class JsonlOutcomeStore:
     def __init__(self, path: Path, exposure_store: JsonlExposureStore | None = None):
         self.path = path
@@ -187,3 +198,95 @@ def difference_interval(
             + control.conversion_rate * (1 - control.conversion_rate) / control.samples
         )
     return effect, (round(effect - z * se, 6), round(effect + z * se, 6))
+
+
+def check_sample_ratio(
+    observed: dict[str, int],
+    allocation: dict[str, float],
+    alpha: float = 0.01,
+    minimum_total: int = 100,
+) -> AllocationHealth:
+    """Run a chi-square goodness-of-fit check against planned allocation."""
+    if set(observed) != set(allocation):
+        raise ValueError("observed and allocation labels must match")
+    if len(allocation) < 2:
+        raise ValueError("at least two variants are required")
+    if any(count < 0 for count in observed.values()):
+        raise ValueError("observed counts cannot be negative")
+    if any(weight <= 0 for weight in allocation.values()) or not math.isclose(
+        sum(allocation.values()), 1.0, abs_tol=1e-9
+    ):
+        raise ValueError("allocation weights must be positive and sum to 1")
+    if not 0 < alpha < 1:
+        raise ValueError("alpha must be between 0 and 1")
+
+    total = sum(observed.values())
+    expected = {name: total * weight for name, weight in allocation.items()}
+    degrees_freedom = len(allocation) - 1
+    if total < minimum_total:
+        return AllocationHealth(
+            "insufficient_data", dict(observed), expected, None,
+            degrees_freedom, None, alpha,
+        )
+
+    statistic = sum(
+        (observed[name] - expected[name]) ** 2 / expected[name]
+        for name in allocation
+    )
+    p_value = _regularized_gamma_q(degrees_freedom / 2, statistic / 2)
+    return AllocationHealth(
+        "mismatch" if p_value < alpha else "healthy",
+        dict(observed),
+        {name: round(value, 6) for name, value in expected.items()},
+        round(statistic, 6),
+        degrees_freedom,
+        round(p_value, 8),
+        alpha,
+    )
+
+
+def _regularized_gamma_q(shape: float, value: float) -> float:
+    """Regularized upper incomplete gamma used by chi-square survival."""
+    if shape <= 0 or value < 0:
+        raise ValueError("gamma arguments are outside the supported domain")
+    if value == 0:
+        return 1.0
+    epsilon = 3e-14
+    tiny = 1e-300
+    maximum_iterations = 200
+    log_scale = -value + shape * math.log(value) - math.lgamma(shape)
+
+    if value < shape + 1:
+        term = 1 / shape
+        series = term
+        rising_shape = shape
+        for _ in range(maximum_iterations):
+            rising_shape += 1
+            term *= value / rising_shape
+            series += term
+            if abs(term) < abs(series) * epsilon:
+                lower = series * math.exp(log_scale)
+                return max(0.0, min(1.0, 1 - lower))
+        raise ArithmeticError("gamma series did not converge")
+
+    denominator = value + 1 - shape
+    c_value = 1 / tiny
+    d_value = 1 / max(abs(denominator), tiny)
+    if denominator < 0:
+        d_value = -d_value
+    fraction = d_value
+    for index in range(1, maximum_iterations + 1):
+        coefficient = -index * (index - shape)
+        denominator += 2
+        d_value = coefficient * d_value + denominator
+        if abs(d_value) < tiny:
+            d_value = tiny
+        c_value = denominator + coefficient / c_value
+        if abs(c_value) < tiny:
+            c_value = tiny
+        d_value = 1 / d_value
+        delta = d_value * c_value
+        fraction *= delta
+        if abs(delta - 1) < epsilon:
+            return max(0.0, min(1.0, math.exp(log_scale) * fraction))
+    raise ArithmeticError("gamma continued fraction did not converge")

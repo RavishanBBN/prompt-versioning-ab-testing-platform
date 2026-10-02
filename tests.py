@@ -5,7 +5,13 @@ from pathlib import Path
 
 from exposures import JsonlExposureStore
 from experiments import Assignment, Experiment, ExperimentCatalog
-from metrics import ExperimentAnalyzer, JsonlOutcomeStore, Outcome, wilson_interval
+from metrics import (
+    ExperimentAnalyzer,
+    JsonlOutcomeStore,
+    Outcome,
+    check_sample_ratio,
+    wilson_interval,
+)
 from prompt_registry import PromptRegistry
 
 
@@ -162,6 +168,29 @@ class MetricsTests(unittest.TestCase):
         self.assertLessEqual(high, 1)
         self.assertLess(low, 0.5)
         self.assertGreater(high, 0.5)
+
+    def test_sample_ratio_check_detects_broken_allocation(self):
+        healthy = check_sample_ratio(
+            {"control": 500, "candidate": 500},
+            {"control": 0.5, "candidate": 0.5},
+        )
+        broken = check_sample_ratio(
+            {"control": 800, "candidate": 200},
+            {"control": 0.5, "candidate": 0.5},
+        )
+        self.assertEqual(healthy.status, "healthy")
+        self.assertAlmostEqual(healthy.p_value, 1.0)
+        self.assertEqual(broken.status, "mismatch")
+        self.assertLess(broken.p_value, broken.alpha)
+
+    def test_sample_ratio_check_waits_for_enough_traffic(self):
+        result = check_sample_ratio(
+            {"control": 4, "candidate": 6},
+            {"control": 0.5, "candidate": 0.5},
+            minimum_total=100,
+        )
+        self.assertEqual(result.status, "insufficient_data")
+        self.assertIsNone(result.p_value)
 
     def test_winner_needs_enough_independent_samples(self):
         self.add_group("control", 0.7, 0.01, count=5)
