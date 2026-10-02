@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from exposures import JsonlExposureStore
-from experiments import Experiment, ExperimentCatalog
+from experiments import Assignment, Experiment, ExperimentCatalog
 from metrics import ExperimentAnalyzer, JsonlOutcomeStore, Outcome, wilson_interval
 from prompt_registry import PromptRegistry
 
@@ -138,6 +138,23 @@ class MetricsTests(unittest.TestCase):
         self.store.append(outcome)
         with self.assertRaisesRegex(ValueError, "one outcome"):
             self.store.append(outcome)
+
+    def test_outcome_must_match_a_recorded_exposure(self):
+        exposures = JsonlExposureStore(self.store.path.parent / "exposures.jsonl")
+        guarded_store = JsonlOutcomeStore(
+            self.store.path.parent / "guarded-outcomes.jsonl", exposures
+        )
+        outcome = Outcome("exp", "user-1", "control", 0.8, True, 0.01, 300)
+        with self.assertRaisesRegex(ValueError, "recorded exposure"):
+            guarded_store.append(outcome)
+
+        exposures.record(Assignment("exp", "user-1", "control", 1, 0.25))
+        guarded_store.append(outcome)
+
+        mismatched = Outcome("exp", "user-2", "control", 0.8, True, 0.01, 300)
+        exposures.record(Assignment("exp", "user-2", "candidate", 2, 0.75))
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            guarded_store.append(mismatched)
 
     def test_wilson_interval_stays_inside_probability_bounds(self):
         low, high = wilson_interval(1, 2)

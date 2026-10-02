@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from exposures import JsonlExposureStore
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -57,12 +59,19 @@ class WinnerDecision:
 
 
 class JsonlOutcomeStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, exposure_store: JsonlExposureStore | None = None):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.exposure_store = exposure_store
 
     def append(self, outcome: Outcome) -> None:
         outcome.validate()
+        if self.exposure_store is not None:
+            exposure = self.exposure_store.find(outcome.experiment_id, outcome.identity)
+            if exposure is None:
+                raise ValueError("outcome requires a recorded exposure")
+            if exposure["variant"] != outcome.variant:
+                raise ValueError("outcome variant does not match recorded exposure")
         if any(
             item["experiment_id"] == outcome.experiment_id and item["identity"] == outcome.identity
             for item in self.records()
