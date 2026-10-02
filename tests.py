@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from exposures import JsonlExposureStore
 from experiments import Experiment, ExperimentCatalog
 from metrics import ExperimentAnalyzer, JsonlOutcomeStore, Outcome, wilson_interval
 from prompt_registry import PromptRegistry
@@ -94,6 +95,25 @@ class ExperimentTests(unittest.TestCase):
         assigned = [self.catalog.assign("exp-1", f"user-{number}").variant for number in range(1000)]
         control_share = assigned.count("control") / len(assigned)
         self.assertTrue(0.45 < control_share < 0.55)
+
+    def test_first_exposure_is_idempotent_and_conflicts_are_rejected(self):
+        self.catalog.set_status("exp-1", "running")
+        assignment = self.catalog.assign("exp-1", "user-1")
+        exposures = JsonlExposureStore(self.catalog.path.parent / "exposures.jsonl")
+        first = exposures.record(assignment)
+        second = exposures.record(assignment)
+        self.assertEqual(first, second)
+        self.assertEqual(len(exposures.records("exp-1")), 1)
+
+        conflicting = assignment.__class__(
+            experiment_id=assignment.experiment_id,
+            identity=assignment.identity,
+            variant="candidate" if assignment.variant == "control" else "control",
+            prompt_version=2 if assignment.prompt_version == 1 else 1,
+            bucket=assignment.bucket,
+        )
+        with self.assertRaisesRegex(ValueError, "conflicting exposure"):
+            exposures.record(conflicting)
 
 
 class MetricsTests(unittest.TestCase):
