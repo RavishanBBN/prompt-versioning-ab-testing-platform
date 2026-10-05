@@ -1,5 +1,7 @@
 # Prompt Versioning and A/B Testing Platform
 
+[![tests](https://github.com/RavishanBBN/prompt-versioning-ab-testing-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/RavishanBBN/prompt-versioning-ab-testing-platform/actions/workflows/ci.yml)
+
 A dependency-free control plane for treating prompts like production artifacts: immutable versions, validated rendering, environment promotion, approvals, stable A/B assignment, outcome analysis, and rollback.
 
 ## What the finished MVP will prove
